@@ -1,0 +1,14 @@
+#include <Token.h>
+#include <string>
+using namespace std;
+
+class Lex
+{
+public:
+  Lex(string f):filename(f)
+  {
+    
+  }
+private:
+  string filename
+}

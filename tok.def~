@@ -1,0 +1,7 @@
+DEF(SHARP,       "#",      "(#)"),
+DEF(TOWSHARP,   "##",     "(##)"),
+DEF(SPACE,       " ",  "([ \\t]+)"),
+DEF(DEFINE, "define",  "(define)"),
+DEF(UNDEF,   "undef",  "(undef)"),
+DEF(LINE,     "\r\n",  "([\r]\n)"),
+DEF(IDENT,   "ident",  "([A-Za-z_]+)"),

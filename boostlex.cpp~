@@ -1,0 +1,22 @@
+#include <boost/regex.hpp>
+#include <string>
+
+using namespace boost;
+
+
+int main()
+{
+  std::string preprocess_lex;
+  boost::regex pattern("([ ]+)|(define)|(undef)", boost::regex::perl);
+  const char str[] = "  undef";
+  cmatch matchs;
+  regex_constants::match_flag_type flags = boost::match_continuous;
+  if (regex_search(str, str + sizeof(str), matchs , pattern, flags))
+    {
+      int i;
+      for (i = 0; i < matchs.size(); ++i)
+        {
+          std::cout << i  << " = " << matchs[i] << std::endl;
+        }
+    }
+}

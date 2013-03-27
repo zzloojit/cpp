@@ -2,7 +2,6 @@
 #define TOKEN_H
 
 #include <string>
-#include "$"
 namespace tok
 {
   enum kind
@@ -44,7 +43,7 @@ namespace tok
     unsigned long len;
     std::string str()
     {
-      std::string s = tok_desc[kind] + " " + tok_str[kind];
+      std::string s = tok_desc[kind] + " " + std::string(ptr, len);
       return s;
     }
   };

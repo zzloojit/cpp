@@ -4,7 +4,7 @@
 #include <string>
 namespace tok
 {
-  enum kind
+  enum Kind
   {
     TEOF,
 #define DEF(x, y, z) x
@@ -39,13 +39,37 @@ namespace tok
   struct Token
   {
     int kind;
-    char* ptr;
-    unsigned long len;
-    std::string str()
+    std::string str;
+
+  Token(Kind k, std::string& s):kind(k), str(s)
+    {}
+  
+    Token()
+    {}
+
+    Token(const Token& tok)
     {
-      std::string s = tok_desc[kind] + " " + std::string(ptr, len);
-      return s;
+      kind = tok.kind;
+      str = tok.str;
     }
+
+    Token& operator = (Token& t)
+    {
+      this->kind = t.kind;
+      this->str = t.str;
+      return *this;
+    }
+      
+    std::string dump()
+    {
+      return str;
+    }
+  };
+  
+  enum
+  {
+    macobj_type,
+    macfunc_type,
   };
 };
 #endif

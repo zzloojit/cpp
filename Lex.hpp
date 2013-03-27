@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <stack>
 #include <set>
+#include <map>
+#include <deque>
 
 #include <boost/regex.hpp>
 #include <boost/filesystem.hpp>
@@ -31,6 +33,8 @@ public:
   char* ptr;
   char* ptr_end;
   string filename;
+  int line_num;
+  int column_num;
 private:
   int fd;
   char* buffer;
@@ -52,6 +56,7 @@ class Preprocess
 {
 public:
   Preprocess(string f);
+  ~Preprocess();
   int next(Token& tok);
 
   void add_inc_path(string path);
@@ -66,6 +71,12 @@ private:
   bool findfile(string& fn,bool u);
   bool has_inc(string& file);
   Lex lex;
+  void except(int k);
   void direct_inc(void);
+  void direct_def(void);
+  void macro_expand(std::string);
+  std::deque<Token> macros_buffer;
+  std::map<string, std::vector<Token> > macros_map;
+  std::set<string> avoid_recursion;
 };
 #endif

@@ -15,6 +15,13 @@ size_t getfilesize(int fd)
   return s.st_size;
 }
 
+void Preprocess::except(int k)
+{
+  Token tok;
+  if (lex.next(tok, fbuffer) != k)
+    fatal_error("encount " + tok.str + " but except " + tok::tok_str[k]);
+}
+
 FileBuffer::FileBuffer(string fn):filename(fn)
 {
   fd = open(filename.c_str(), O_RDONLY);
@@ -36,7 +43,6 @@ FileBuffer::~FileBuffer()
     free(buffer);
   if(fd)
     close(fd);
-
 }
 
 Lex::Lex(string f)
@@ -49,9 +55,7 @@ Lex::Lex(string f)
   {
     p += string("|") + tok::patterns[i];
   }
-
   pattern = boost::regex(p, boost::regex::perl);
-  
 }
 
 Lex::~Lex()
@@ -65,7 +69,8 @@ int Lex::next(Token& t, FileBuffer* fbuffer)
   boost::regex_constants::match_flag_type flags = boost::match_continuous ;//| boost::match_extra;
   char* &ptr = fbuffer->ptr;
   char* &ptr_end = fbuffer->ptr_end;
-
+  int& line_num = fbuffer->line_num;
+  int& column_num = fbuffer->column_num;
   if (ptr == ptr_end)
   {
     t.kind = tok::TEOF;
@@ -79,14 +84,9 @@ int Lex::next(Token& t, FileBuffer* fbuffer)
     {
       if (matchs[i].matched)
       {
-        // if idnet not keyword
-        // if (matchs[i].length() < j)
-        //   t.kind = tok::IDENT;
-        // else
-        t.kind = (tok::kind)i;
-        //std::cout << "ident = " << matchs[tok::IDENT] << std::endl;
-        t.ptr = ptr;
-        t.len = matchs[i].length();
+        t.kind = (tok::Kind)i;
+        t.str = matchs[i];
+        break;
       }
     }
   }
@@ -95,7 +95,15 @@ int Lex::next(Token& t, FileBuffer* fbuffer)
     fatal_error("unknown character");// at line " + line + "column " + column);
   }
 
+  if (t.kind == tok::LINE)
+    {
+      line_num++;
+      column_num = 0;
+    }
+  
   ptr += matchs[0].length();
+  column_num = matchs[0].length();
+  
   if (ptr > ptr_end)
     fatal_error("unknown token");
 
@@ -132,6 +140,12 @@ int Preprocess::next(Token& tok)
 {
   for(;;)
   {
+    if (!macros_buffer.empty())
+      {
+        tok = macros_buffer.front();
+        macros_buffer.pop_front();
+        return tok.kind;
+      }
     int t = lex.next(tok, fbuffer);
     switch(t)
     {
@@ -139,7 +153,17 @@ int Preprocess::next(Token& tok)
       return t;
     case tok::INCLUDE:
       direct_inc();
-      next(tok);
+      break;
+    case tok::DEFINE:
+      direct_def();
+      break;
+    case tok::IDENT:
+      if (macros_map.find(tok.str) != macros_map.end())
+        {
+          macro_expand(tok.str);
+        }
+      else
+        return t;
       break;
     case tok::TEOF:
       if (!buffers.empty())
@@ -161,6 +185,82 @@ int Preprocess::next(Token& tok)
 bool Preprocess::has_inc(string& file)
 {
   return inc_set.find(file) != inc_set.end();
+}
+
+void Preprocess::macro_expand(std::string s)
+{
+  avoid_recursion.insert(s);
+  std::vector<Token>& vec = macros_map[s];
+  Token tok;
+  for (std::vector<Token>::iterator i = vec.begin(); i != vec.end(); ++i)
+    {
+      tok = *i;
+      if (macros_map.find(tok.str) == macros_map.end())
+        {
+          macros_buffer.push_back(tok);
+        }
+      else if(avoid_recursion.find(tok.str) != avoid_recursion.end())
+        {
+          macros_buffer.push_back(tok);
+        }
+      else
+        {
+          macro_expand(tok.str);
+        }
+    }
+  avoid_recursion.erase(s);
+}
+
+void Preprocess::direct_def(void)
+{
+  Token tok;
+  int type;
+
+  except(tok::SPACE);
+
+  int t = lex.next(tok, fbuffer);  
+
+  
+  if (t != tok::IDENT)
+    {
+      fatal_error("define need identifier");
+    }
+  
+  string n(tok.str);
+  
+  if (macros_map.find(n) != macros_map.end())
+    std::cout << "redefined " + n << std::endl;
+  
+  std::vector<Token>& vec = macros_map[n];
+
+  t = lex.next(tok, fbuffer);
+    
+  if (t == tok::LPAREN)
+    {
+      type = tok::macfunc_type;
+    }
+  else if (t == tok::SPACE)
+    {
+      type == tok::macobj_type;
+      bool allspace = true;
+
+      while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
+        {
+          if (t == tok::LINE)
+            break;
+          if (t != tok::SPACE)
+            allspace = false;
+          vec.push_back(tok);
+        }
+      
+      string one("1");
+      if (allspace)
+        vec.push_back(Token(tok::NUMBER, one));
+    }
+  else
+    {
+      fatal_error("parse define error");
+    }
 }
 
 void Preprocess::direct_inc(void)
@@ -254,6 +354,11 @@ bool Preprocess::findfile(string& fn, bool user)
   return false;
 }
 
+Preprocess::~Preprocess()
+{
+  
+}
+
 #ifdef DEBUG
 int main()
 {
@@ -261,6 +366,6 @@ int main()
   Token t;
 
   while (pp.next(t) != tok::TEOF)
-    std::cout << t.str() << std::endl;
+    std::cout << t.dump();
 }
 #endif

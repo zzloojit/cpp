@@ -1,3 +1,5 @@
+DEF(LINE         ,"\\r\\n"               ,"([\r]?\n)"),   
+
 DEF(INCLUDE      ,"include"              ,"(\\s*#\\s*include(?=[^\\w]))"),
 DEF(DEFINE       ,"define"               ,"(\\s*#\\s*define(?=[^\\w]))"),    
 DEF(UNDEF        ,"undef"                ,"(\\s*#\\s*undef(?=[^\\w]))"),     
@@ -7,7 +9,6 @@ DEF(ENDIF        ,"endif"                ,"(\\s*#\\s*endif(?=[^\\w]))"),
 DEF(TOWSHARP     ,"##"                   ,"(##)"),        
 DEF(SHARP        ,"#"                    ,"(#)"),         
 DEF(SPACE        ," "                    ,"([ \\t]+)"),   
-DEF(LINE         ,"\\r\\n"               ,"([\r]?\n)"),   
 
 DEF(ELLIPSIS     ,"..."                  ,"([\\.]{3})"),  
 DEF(RIGHT_ASSIGN ,">>="                  ,"(>>=)"),        

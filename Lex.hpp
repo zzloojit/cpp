@@ -64,6 +64,11 @@ struct macro_type
     }
 };
 
+struct macro_level
+{
+  int  level;
+  bool status;
+};
 class Preprocess
 {
 public:
@@ -73,20 +78,27 @@ public:
 
   void add_inc_path(string path);
   void add_sys_inc_path(string path);
-
+  
+  void set_outfile(string file);
 private:
+  void eat_excess(void);
+  void direct_endif(void);
+  void direct_ifdef(void);
   Buffer* fbuffer;
+  bool E_mode;
+  Lex lex;
   std::stack<Buffer*> buffers;
   std::vector<string> sys_inc_path;
   std::vector<string> inc_path;
   std::set<string>  inc_set;
   bool findfile(string& fn,bool u);
   bool has_inc(string& file);
-  Lex lex;
   void except(int k);
   void except(int k, int l);
+  void comment(int t);
   void direct_inc(void);
   void direct_def(void);
+  void direct_undef();
   int  parse_macro_arg(string& s);
   int  parse_arguments(std::vector<string>& vec);
   void macro_expand(const Token& macro);
@@ -94,5 +106,7 @@ private:
   std::deque<Token> macros_buffer;
   std::map<string, macro_type> macros_map;
   std::set<string> avoid_recursion;
+  macro_level      c_macro_level;
+  std::stack<macro_level>  macro_levels;
 };
 #endif

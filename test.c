@@ -1,5 +1,8 @@
-#define a #include
+#ifdef "hello world"
 a
+#endif
+
+
 
 
 

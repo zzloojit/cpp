@@ -1,15 +1,18 @@
-DEF(LINE         ,"\\r\\n"               ,"([\r]?\n)"),   
-
+DEF(LINE         ,"\\r\\n"                ,"([\r]?\n)"),   
+DEF(COMMENT      ,"/*"                    ,"(/\\*)"),
+DEF(SCOMMENT     ,"//"                    ,"(//)"), 
 DEF(INCLUDE      ,"#include"              ,"(\\s*^#\\s*include(?=[^\\w]))"),
 DEF(DEFINE       ,"#define"               ,"(\\s*^#\\s*define(?=[^\\w]))"),    
 DEF(UNDEF        ,"#undef"                ,"(\\s*^#\\s*undef(?=[^\\w]))"),     
 DEF(IFDEF        ,"#ifdef"                ,"(\\s*^#\\s*ifdef(?=[^\\w]))"),
+DEF(IFNDEF       ,"#ifndef"               ,"(\\s*^#\\s*ifndef(?=[^\\w]))"),
+DEF(ELSE         ,"#else"                 ,"(\\s*^#\\s*else(?=[^\\w]))"),
 DEF(ENDIF        ,"#endif"                ,"(\\s*^#\\s*endif(?=[^\\w]))"),
 
 DEF(TOWSHARP     ,"##"                   ,"(##)"),        
 DEF(SHARP        ,"#"                    ,"(#)"),         
 DEF(SPACE        ," "                    ,"([ \\t]+)"),   
-
+DEF(STRING       ,"string"               ,"(\".*?\")"),     
 DEF(ELLIPSIS     ,"..."                  ,"([\\.]{3})"),  
 DEF(RIGHT_ASSIGN ,">>="                  ,"(>>=)"),        
 DEF(LEFT_ASSIGN  ,"<<="                  ,"(<<=)"),        

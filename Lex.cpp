@@ -3,6 +3,10 @@
 
 #define DEBUG
 
+void warning(string s)
+{
+  cerr << s << endl;
+}
 void fatal_error(string s)
 {
   cerr << s << endl;
@@ -127,7 +131,7 @@ int Lex::next(Token& t, Buffer* fbuffer)
   return t.kind;
 }
 
-Preprocess::Preprocess(string f):lex(f)
+Preprocess::Preprocess(string f):lex(f),E_mode(false)
 {
   boost::filesystem::path p(f);
   if (boost::filesystem::exists(p))
@@ -137,9 +141,30 @@ Preprocess::Preprocess(string f):lex(f)
       f = boost::filesystem::absolute(p).string();
     }
   }
-
+  
+  c_macro_level.level = 0;
+  c_macro_level.status = true;
   inc_set.insert(f);
   fbuffer = new FileBuffer(f);
+}
+
+void Preprocess::set_outfile(string f)
+{
+  E_mode = true;
+  Token tok;
+  int fd = open(f.c_str(), O_WRONLY| O_TRUNC | O_CREAT, 0644);
+  
+  if (fd == -1)
+    fatal_error("open file " + f + " error");
+
+  while (next(tok) != tok::TEOF)
+    write(fd, tok.str.c_str(), tok.str.length());
+  
+  if (!macro_levels.empty())
+    {
+      fatal_error("#ifdef or #if haven't match #endif");
+    }
+  close(fd);
 }
 
 void Preprocess::add_inc_path(string path)
@@ -156,6 +181,118 @@ void Preprocess::add_sys_inc_path(string path)
   sys_inc_path.push_back(path);
 }
 
+void Preprocess::comment(int t)
+{
+  const char*& ptr = fbuffer->ptr;
+  const char*& ptr_end = fbuffer->ptr_end;
+  const char* base = ptr;
+  Token tok;
+
+  assert (t == tok::SCOMMENT || t == tok::COMMENT);
+  bool signcomment = (t == tok::SCOMMENT);
+  if (signcomment)
+    {
+      tok.str = "//";
+      while (ptr < ptr_end)
+        {
+          if (*ptr++ =='\n')
+            {
+              if (E_mode)
+                {
+                  tok.kind = tok::SCOMMENT;
+                  tok.str += string(base, ptr - base);
+                  macros_buffer.push_back(tok);
+                }
+              return;
+            }
+        }
+    } 
+  else
+    {
+      tok.str = "/*";
+      while (ptr < ptr_end)
+        {
+          if((*ptr == '*') && (*(ptr + 1) == '/'))
+            {
+              if (ptr + 1 < ptr_end)
+                {
+                  ptr += 2;
+                  if (E_mode)
+                    {
+                      tok.kind = tok::COMMENT;
+                      tok.str += string(base, ptr - base);
+                      macros_buffer.push_back(tok);
+                    }
+                  return;
+                }
+            }
+          ptr++;
+        }
+      fatal_error("comment haven't terminate");
+    }
+}
+
+inline void Preprocess::eat_excess(void)
+{
+  // maybe followed by  excess character
+  Token tok;
+  int t;
+  do{
+    t = lex.next(tok, fbuffer);
+    switch(t)
+      {
+      case tok::SPACE:
+        continue;
+      case tok::LINE:
+        return;
+      case tok::COMMENT:
+      case tok::SCOMMENT:
+        comment(t);
+      default:
+        warning("#ifdef followed by excess character");
+      }
+  }while (t != tok::TEOF);
+}
+
+void Preprocess::direct_endif(void)
+{
+  if (macro_levels.empty())
+    {
+      fatal_error("#endif haven't matched #if"); 
+    }
+  c_macro_level = macro_levels.top();
+  macro_levels.pop();
+  eat_excess();
+}
+
+void Preprocess::direct_ifdef(void)
+{
+  Token tok;
+  macro_level ml;
+  int t;
+  do {
+    t = lex.next(tok, fbuffer);
+  } while (t == tok::SPACE);
+  
+  if (t != tok::IDENT)
+    fatal_error("macro name must be identifier");
+
+  if (macros_map.find(tok.str) != macros_map.end())
+    {
+      // token has be defined
+      macro_levels.push (c_macro_level);
+      c_macro_level.level += 1;
+    }
+  else
+    {
+      // token has not be defined
+      macro_levels.push (c_macro_level);
+      c_macro_level.level += 1;
+      c_macro_level.status = false;
+    }
+  eat_excess();
+}
+
 int Preprocess::next(Token& tok)
 {
   for(;;)
@@ -167,6 +304,21 @@ int Preprocess::next(Token& tok)
         return tok.kind;
       }
     int t = lex.next(tok, fbuffer);
+    
+    if (t == tok::IFDEF)
+      {
+        direct_ifdef();
+        continue;
+      }
+    else if (t == tok::ENDIF)
+      {
+        direct_endif();
+        continue;
+      }
+    
+    //if the token in undefined branch
+    if (!c_macro_level.status)
+      continue;
     switch(t)
     {
     default:
@@ -177,6 +329,9 @@ int Preprocess::next(Token& tok)
     case tok::DEFINE:
       direct_def();
       break;
+    case tok::UNDEF:
+      direct_undef();
+      break;
     case tok::IDENT:
       if (macros_map.find(tok.str) != macros_map.end())
         {
@@ -184,6 +339,10 @@ int Preprocess::next(Token& tok)
         }
       else
         return t;
+      break;
+    case tok::COMMENT:
+    case tok::SCOMMENT:
+      comment(t);
       break;
     case tok::TEOF:
       if (!buffers.empty())
@@ -429,6 +588,18 @@ void Preprocess::macro_expand(const Token& token)
   }
 }
 
+void Preprocess::direct_undef(void)
+{
+  Token tok;
+  except(tok::SPACE);
+  int t = lex.next(tok, fbuffer);
+  if (t != tok::IDENT)
+    {
+      fatal_error("undef need identifier");
+    }
+  macros_map.erase(tok.str);
+}
+
 void Preprocess::direct_def(void)
 {
   Token tok;
@@ -623,9 +794,6 @@ Preprocess::~Preprocess()
 int main()
 {
   Preprocess pp("test.c");
-  Token t;
-
-  while (pp.next(t) != tok::TEOF)
-    std::cout << t.dump();
+  pp.set_outfile("test.E");
 }
 #endif

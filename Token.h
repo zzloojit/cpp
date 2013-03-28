@@ -24,7 +24,7 @@ namespace tok
   const std::string tok_str[] =
     {
       "TEOF",
-#define DEF(x, y, z) #y
+#define DEF(x, y, z) y
 #include "tok.def"
 #undef  DEF
     };
@@ -62,7 +62,7 @@ namespace tok
       
     std::string dump()
     {
-      return str;
+      return tok_desc[kind] + " " + str + "\n";
     }
   };
   

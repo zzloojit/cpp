@@ -1,4 +1,5 @@
 #include "Lex.hpp"
+#include <cassert>
 
 #define DEBUG
 
@@ -22,18 +23,30 @@ void Preprocess::except(int k)
     fatal_error("encount " + tok.str + " but except " + tok::tok_str[k]);
 }
 
-FileBuffer::FileBuffer(string fn):filename(fn)
+void Preprocess::except(int k, int l)
 {
-  fd = open(filename.c_str(), O_RDONLY);
+  Token tok;
+  assert(k < tok::totals && l < tok::totals);
+
+  int t = lex.next(tok, fbuffer);
+  if ((t != k) || (t != l))
+    fatal_error("encount " + tok.str + " but except " + tok::tok_str[k] 
+                + " or "  + tok::tok_str[l]);
+}
+
+FileBuffer::FileBuffer(string fn)
+{
+  name = fn;
+  fd = open(name.c_str(), O_RDONLY);
   if (fd == -1)
-    fatal_error("open file " + filename + " error");
+    fatal_error("open file " + name + " error");
   buflen = getfilesize(fd);
   ptr = buffer = (char*)malloc(buflen);
   if (buffer == NULL)
     fatal_error("memory fatal");
   int l = read(fd, buffer, buflen);
   if (l != buflen)
-    fatal_error("read file " + filename);
+    fatal_error("read file " + name);
   ptr_end = buffer + l;
 }
 
@@ -63,12 +76,12 @@ Lex::~Lex()
   
 }
 
-int Lex::next(Token& t, FileBuffer* fbuffer)
+int Lex::next(Token& t, Buffer* fbuffer)
 {
   boost::cmatch matchs;
   boost::regex_constants::match_flag_type flags = boost::match_continuous ;//| boost::match_extra;
-  char* &ptr = fbuffer->ptr;
-  char* &ptr_end = fbuffer->ptr_end;
+  const char* &ptr = fbuffer->ptr;
+  const char* &ptr_end = fbuffer->ptr_end;
   int& line_num = fbuffer->line_num;
   int& column_num = fbuffer->column_num;
   if (ptr == ptr_end)
@@ -92,7 +105,11 @@ int Lex::next(Token& t, FileBuffer* fbuffer)
   }
   else
   {
-    fatal_error("unknown character");// at line " + line + "column " + column);
+    const char *p;
+    if ((p =  strchr(ptr, '\n')) == NULL)
+      p = ptr_end;
+    fatal_error("unknown character \"" + string(ptr, p - ptr) + "\" at "
+                + fbuffer->name);
   }
 
   if (t.kind == tok::LINE)
@@ -112,14 +129,17 @@ int Lex::next(Token& t, FileBuffer* fbuffer)
 
 Preprocess::Preprocess(string f):lex(f)
 {
-  add_inc_path(boost::filesystem::current_path().string());
-  
-  if (findfile(f, true))
+  boost::filesystem::path p(f);
+  if (boost::filesystem::exists(p))
   {
-    inc_set.insert(f);
-    fbuffer = new FileBuffer(f);
+    if (!p.has_root_path())
+    {
+      f = boost::filesystem::absolute(p).string();
+    }
   }
 
+  inc_set.insert(f);
+  fbuffer = new FileBuffer(f);
 }
 
 void Preprocess::add_inc_path(string path)
@@ -160,7 +180,7 @@ int Preprocess::next(Token& tok)
     case tok::IDENT:
       if (macros_map.find(tok.str) != macros_map.end())
         {
-          macro_expand(tok.str);
+          macro_expand(tok);
         }
       else
         return t;
@@ -168,7 +188,7 @@ int Preprocess::next(Token& tok)
     case tok::TEOF:
       if (!buffers.empty())
       {
-        inc_set.erase(fbuffer->filename);
+        inc_set.erase(fbuffer->name);
         delete fbuffer;
         fbuffer = buffers.top();
         buffers.pop();
@@ -187,34 +207,231 @@ bool Preprocess::has_inc(string& file)
   return inc_set.find(file) != inc_set.end();
 }
 
-void Preprocess::macro_expand(std::string s)
+int Preprocess::parse_arguments(std::vector<string>& vec)
 {
-  avoid_recursion.insert(s);
-  std::vector<Token>& vec = macros_map[s];
+  string a;
+  int k;
+  while (k = parse_macro_arg(a))
+  {
+    assert((k == tok::COMMA) || (k == tok::RPAREN));
+    if ((k == tok::COMMA) && (a == ""))
+      fatal_error("macro need arguments");
+    if ((k == tok::RPAREN) && (a == ""))
+      break;
+      
+    vec.push_back(a);
+    a = "";
+    if (k == tok::RPAREN)
+      break;
+  }
+}
+
+int Preprocess::parse_macro_arg(string& s)
+{
   Token tok;
-  for (std::vector<Token>::iterator i = vec.begin(); i != vec.end(); ++i)
+  int t;
+  
+  while (t = lex.next(tok, fbuffer))
+  {
+    if ((t == tok::RPAREN) || (t == tok:: COMMA))
     {
-      tok = *i;
-      if (macros_map.find(tok.str) == macros_map.end())
-        {
-          macros_buffer.push_back(tok);
-        }
-      else if(avoid_recursion.find(tok.str) != avoid_recursion.end())
-        {
-          macros_buffer.push_back(tok);
-        }
-      else
-        {
-          macro_expand(tok.str);
-        }
+      return t; 
     }
-  avoid_recursion.erase(s);
+    else if (t == tok::LPAREN)
+    {
+      std::vector<string>  vec;
+      s += tok::tok_str[tok::LPAREN];
+      parse_arguments(vec);
+
+      int i = 0;
+      for (; i < vec.size(); ++i)
+      {
+        s += vec[i];
+        if (i != vec.size() - 1)
+          s += ",";
+      }
+      
+      //replace ',' with ')'
+      s += tok::tok_str[tok::RPAREN];
+    }
+    else if ((t == tok::TEOF) || (t == tok::LINE))
+    {
+      fatal_error("need macro arguments");
+    }
+    else
+    {
+      s += tok.str;
+    }
+  }
+}
+
+void Preprocess::macro_expand_func(const Token& token)
+{
+  Token tok;
+  int t;
+  const string& s = token.str; 
+  macro_type& vec = macros_map[s];
+  assert(vec.kind == tok::macfunc_type);
+  
+  do{
+    t = lex.next(tok, fbuffer);
+  }while (t == tok::SPACE);
+    
+  // macro followed by ')' don't expand 
+  if (t == tok::RPAREN)
+  {
+    macros_buffer.push_back(token);
+    macros_buffer.push_back(tok);
+  }
+  else if (t == tok::LPAREN)
+  {
+    std::vector<string> argus;
+    // string a;
+    // int k;
+
+    // while (k = parse_macro_arg(a))
+    // {
+    //   assert((k == tok::COMMA) || (k == tok::RPAREN));
+      
+    //   if ((k == tok::COMMA) && (a == ""))
+    //     fatal_error("macro need arguments");
+    //   if ((k == tok::RPAREN) && (a == ""))
+    //     break;
+      
+    //   argus.push_back(a);
+    //   a = "";
+    //   if (k == tok::RPAREN)
+    //     break;
+    // }
+
+    parse_arguments(argus);
+    if (argus.size() != vec.params.size())
+      fatal_error("macro " + s + " parameters and arguments size not match");
+    
+    std::map<string, string> pa_map;
+    
+    int i = 0;
+    for (; i < vec.params.size(); ++i)
+    {
+      pa_map[vec.params[i].str] = argus[i];
+    }
+    
+    string expands;
+    avoid_recursion.insert(token.str);
+    for(std::vector<Token>::iterator i = vec.expand.begin(); 
+        i != vec.expand.end(); ++i)
+    {
+      if (avoid_recursion.find(i->str) != avoid_recursion.end())
+          expands += "\n";
+
+      if ((pa_map.find(i->str) != pa_map.end()))
+      {
+        expands += pa_map[i->str];
+      }
+      else
+      {
+        expands += i->str;
+      }
+    }
+
+    
+    Buffer buffer;
+    buffer.name = fbuffer->name;
+    buffer.line_num = fbuffer->line_num;
+    buffer.column_num = fbuffer->column_num;
+    buffer.ptr = expands.c_str();
+    buffer.ptr_end = buffer.ptr + expands.length();
+    buffers.push(fbuffer);
+    fbuffer = &buffer;
+
+    
+    bool next_expand = true;
+    while ((t = lex.next(tok, &buffer)) != tok::TEOF)
+    {
+      if (t == tok::LINE)
+      {
+        next_expand = false;
+        continue;
+      }
+      if ((macros_map.find(tok.str) != macros_map.end()) && next_expand)
+      {
+        macro_expand(tok);
+      }
+      else
+        macros_buffer.push_back(tok);
+      next_expand = true;
+    }
+
+    fbuffer = buffers.top();
+    buffers.pop();
+  }
+  else
+  {
+    fatal_error("macro " + s + " need arguments");
+  }
+  avoid_recursion.erase(token.str);
+}
+
+void Preprocess::macro_expand(const Token& token)
+{
+  
+  const string& s = token.str;
+  macro_type& vec = macros_map[s];
+  
+  // don't need expand
+  // if (avoid_recursion.find(s) != avoid_recursion.end())
+  // {
+  //   macros_buffer.push_back(token);
+  //   return;
+  // }
+
+
+  
+  if (vec.kind == tok::macfunc_type)
+  {
+    macro_expand_func(token);
+  }
+  else
+  {
+
+    assert(vec.kind == tok::macobj_type);
+
+    avoid_recursion.insert(s);
+    for (std::vector<Token>::iterator i = vec.expand.begin(); i != vec.expand.end(); ++i)
+    {
+      Token tok = *i;
+      // convert preprocess token to c token
+      // maybe create two token table will be better
+      if (tok.kind == tok::INCLUDE)
+      {
+        tok.kind = tok::SHARP;
+        tok.str = tok::tok_str[tok::SHARP];
+        macros_buffer.push_back(tok);
+
+        tok.kind = tok::IDENT;
+        tok.str = "include";
+        macros_buffer.push_back(tok);
+      }
+      else if (macros_map.find(tok.str) == macros_map.end())
+      {
+        macros_buffer.push_back(tok);
+      }
+      else if(avoid_recursion.find(tok.str) != avoid_recursion.end())
+      {
+        macros_buffer.push_back(tok);
+      }
+      else
+      {
+        macro_expand(tok);
+      }
+    }
+    avoid_recursion.erase(s);
+  }
 }
 
 void Preprocess::direct_def(void)
 {
   Token tok;
-  int type;
 
   except(tok::SPACE);
 
@@ -231,17 +448,49 @@ void Preprocess::direct_def(void)
   if (macros_map.find(n) != macros_map.end())
     std::cout << "redefined " + n << std::endl;
   
-  std::vector<Token>& vec = macros_map[n];
+  macro_type& vec = macros_map[n];
 
   t = lex.next(tok, fbuffer);
     
   if (t == tok::LPAREN)
     {
-      type = tok::macfunc_type;
+      vec.kind = tok::macfunc_type;
+      
+      // 
+      while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
+      {
+        if (t == tok::SPACE)
+          continue;
+        else if ( t == tok::IDENT)
+        {
+          vec.params.push_back(tok);
+          do{
+            t = lex.next(tok, fbuffer);
+          }while (t == tok::SPACE);
+          
+          if (t == tok::COMMA)
+            continue;
+          else if (t == tok::RPAREN)
+            break;
+          else
+           {
+             fatal_error(tok::tok_str[t] + 
+                         " can not appear macro parameter list");
+           }
+        }
+      }
+      
+      while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
+        {
+          if (t == tok::LINE)
+            break;
+          vec.expand.push_back(tok);
+        }
     }
   else if (t == tok::SPACE)
     {
-      type == tok::macobj_type;
+      vec.kind == tok::macobj_type;
+      
       bool allspace = true;
 
       while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
@@ -250,12 +499,12 @@ void Preprocess::direct_def(void)
             break;
           if (t != tok::SPACE)
             allspace = false;
-          vec.push_back(tok);
+          vec.expand.push_back(tok);
         }
       
       string one("1");
       if (allspace)
-        vec.push_back(Token(tok::NUMBER, one));
+        vec.expand.push_back(Token(tok::NUMBER, one));
     }
   else
     {
@@ -265,8 +514,8 @@ void Preprocess::direct_def(void)
 
 void Preprocess::direct_inc(void)
 {
-  char* &ptr = fbuffer->ptr;
-  char* &ptr_end = fbuffer->ptr_end;
+  const char* &ptr = fbuffer->ptr;
+  const char* &ptr_end = fbuffer->ptr_end;
   
   bool userdir = false;
   boost::cmatch matchs;
@@ -319,16 +568,27 @@ void Preprocess::direct_inc(void)
 
 bool Preprocess::findfile(string& fn, bool user)
 {
+  assert(fbuffer);
   boost::filesystem::path p(fn);
   
   if (boost::filesystem::exists(p) && p.has_root_path())
     return true;
-
-  string b = fn;
+  
   std::vector<string>::iterator i;
-
+  
+  //boost::filesystem::path b;
+  string b;
   if (user)
   {
+    boost::filesystem::path
+      pp = boost::filesystem::path(fbuffer->name).parent_path();
+
+    if (boost::filesystem::exists(pp.string() + "/" + fn))
+    {
+      fn = pp.string() + "/" + fn;
+      return true;
+    }
+
     for (i = inc_path.begin(); i < inc_path.end(); ++i) 
     {
       b = *i + fn;

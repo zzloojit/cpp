@@ -2,8 +2,10 @@
 #define BUFFER_HPP
 #include <string>
 
-struct Buffer
+class Buffer
 {
+public:
+  Buffer();
   std::string name;
   const char* ptr;
   const char* ptr_end;

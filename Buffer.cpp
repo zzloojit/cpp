@@ -3,10 +3,9 @@
 
 Buffer::Buffer()
 {
-  std::string name = "";
-  const char* ptr = NULL;
-  const char* ptr_end = NULL;
-  int line_num = 0;
-  int column_num = 0;
-  std::cout << "Buffer line " << line_num << std::endl;
+  name = "";
+  ptr = NULL;
+  ptr_end = NULL;
+  line_num = 0;
+  column_num = 0;
 };

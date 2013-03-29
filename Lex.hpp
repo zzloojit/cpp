@@ -8,6 +8,7 @@
 #include <set>
 #include <map>
 #include <deque>
+#include <sstream>
 
 #include <boost/regex.hpp>
 #include <boost/filesystem.hpp>
@@ -31,11 +32,6 @@ class FileBuffer : public Buffer
 public:
   FileBuffer(string fn);
   ~FileBuffer();
-  // char* ptr;
-  // char* ptr_end;
-  //string filename;
-  // int line_num;
-  // int column_num;
 private:
   int fd;
   char* buffer;
@@ -69,6 +65,7 @@ struct macro_level
   int  level;
   bool status;
 };
+
 class Preprocess
 {
 public:
@@ -83,7 +80,10 @@ public:
 private:
   void eat_excess(void);
   void direct_endif(void);
-  void direct_ifdef(void);
+  void direct_ifdef(int k);
+  void direct_else(void);
+  void direct_elif(void);
+
   Buffer* fbuffer;
   bool E_mode;
   Lex lex;
@@ -96,6 +96,7 @@ private:
   void except(int k);
   void except(int k, int l);
   void comment(int t);
+  void direct_line(void);
   void direct_inc(void);
   void direct_def(void);
   void direct_undef();

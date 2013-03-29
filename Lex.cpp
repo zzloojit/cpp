@@ -50,16 +50,14 @@ FileBuffer::FileBuffer(string fn)
     fatal_error("memory fatal");
   int l = read(fd, buffer, buflen);
   if (l != buflen)
-    fatal_error("read file " + name);
+    fatal_error("read file " + name + " error");
   ptr_end = buffer + l;
 }
 
 FileBuffer::~FileBuffer()
 {
-  if(buffer)
-    free(buffer);
-  if(fd)
-    close(fd);
+  free(buffer);
+  close(fd);
 }
 
 Lex::Lex(string f)
@@ -94,7 +92,7 @@ int Lex::next(Token& t, Buffer* fbuffer)
     return t.kind;
   }
 
-  if (boost::regex_search(ptr,  matchs , pattern, flags))
+  if (boost::regex_search(ptr, matchs , pattern, flags))
   {
     int i;
     for (i = 1; i < matchs.size(); ++i)
@@ -116,14 +114,29 @@ int Lex::next(Token& t, Buffer* fbuffer)
                 + fbuffer->name);
   }
 
-  if (t.kind == tok::LINE)
+  if (t.kind == tok::TAB)
+  {
+    t.kind = tok::SPACE;
+    // tab character have 
+    column_num += 8; 
+  }
+  else
+  {
+    column_num += t.str.length(); 
+  }
+  
+  t.line_num = line_num;
+  t.filename = fbuffer->name;
+  t.column_num = column_num;
+
+  // count line number
+  if (t.kind == tok::NEWLINE)
     {
       line_num++;
       column_num = 0;
     }
-  
+
   ptr += matchs[0].length();
-  column_num = matchs[0].length();
   
   if (ptr > ptr_end)
     fatal_error("unknown token");
@@ -153,12 +166,17 @@ void Preprocess::set_outfile(string f)
   E_mode = true;
   Token tok;
   int fd = open(f.c_str(), O_WRONLY| O_TRUNC | O_CREAT, 0644);
+  string cur_f;
+  int line;
+  std::stringstream ss;
   
   if (fd == -1)
     fatal_error("open file " + f + " error");
 
   while (next(tok) != tok::TEOF)
+  {
     write(fd, tok.str.c_str(), tok.str.length());
+  }
   
   if (!macro_levels.empty())
     {
@@ -200,7 +218,14 @@ void Preprocess::comment(int t)
               if (E_mode)
                 {
                   tok.kind = tok::SCOMMENT;
+                  tok.line_num = fbuffer->line_num;
+                  tok.column_num = fbuffer->column_num + ptr - base;
                   tok.str += string(base, ptr - base);
+                  tok.filename = fbuffer->name;
+                  
+                  fbuffer->line_num++;
+                  fbuffer->column_num = 0;
+
                   macros_buffer.push_back(tok);
                 }
               return;
@@ -210,6 +235,9 @@ void Preprocess::comment(int t)
   else
     {
       tok.str = "/*";
+      int line = fbuffer->line_num;
+      int column = fbuffer->column_num;
+      
       while (ptr < ptr_end)
         {
           if((*ptr == '*') && (*(ptr + 1) == '/'))
@@ -219,13 +247,28 @@ void Preprocess::comment(int t)
                   ptr += 2;
                   if (E_mode)
                     {
+
                       tok.kind = tok::COMMENT;
+                      tok.line_num = line;
+                      tok.column_num = column;
                       tok.str += string(base, ptr - base);
+                      tok.filename = fbuffer->name;
+                      
+                      fbuffer->column_num += 2;
                       macros_buffer.push_back(tok);
                     }
                   return;
                 }
             }
+          else if(*ptr == '\n')
+          {
+            fbuffer->line_num++;
+            fbuffer->column_num = 0; 
+          }
+          else
+          {
+            fbuffer->column_num++; 
+          }
           ptr++;
         }
       fatal_error("comment haven't terminate");
@@ -243,7 +286,7 @@ inline void Preprocess::eat_excess(void)
       {
       case tok::SPACE:
         continue;
-      case tok::LINE:
+      case tok::NEWLINE:
         return;
       case tok::COMMENT:
       case tok::SCOMMENT:
@@ -265,7 +308,52 @@ void Preprocess::direct_endif(void)
   eat_excess();
 }
 
-void Preprocess::direct_ifdef(void)
+void Preprocess::direct_line(void)
+{
+  int t;
+  Token tok_line;
+  Token tok_name;
+  Token tok_excess;
+
+  do {
+    t = lex.next(tok_line, fbuffer);
+  } while (t == tok::SPACE);
+
+  if (t != tok::NUMBER)
+    fatal_error("#line need line number");
+  
+  int line = strtol(tok_line.str.c_str(), NULL, 0);
+  
+  do {
+    t = lex.next(tok_name, fbuffer);
+  } while (t == tok::SPACE);
+  
+  // in the same file
+  if (t == tok::STRING)
+  {
+    fbuffer->name = tok_name.str.substr(1, tok_name.str.length() - 2);
+  }
+  else if (t != tok::NEWLINE)
+  {
+    do{ 
+      t = lex.next(tok_excess, fbuffer);
+    }while (t != tok::NEWLINE);
+  }
+  fbuffer->line_num = line;
+  
+  if (E_mode)
+  {
+        
+    Token tok(tok_name);
+    std::stringstream ss;
+    ss << "#line " << line << " \"" <<  fbuffer->name 
+       << "\"" << endl;
+    tok.str = ss.str();
+    macros_buffer.push_back(tok);
+  }
+}
+
+void Preprocess::direct_ifdef(int kind)
 {
   Token tok;
   macro_level ml;
@@ -276,8 +364,12 @@ void Preprocess::direct_ifdef(void)
   
   if (t != tok::IDENT)
     fatal_error("macro name must be identifier");
-
-  if (macros_map.find(tok.str) != macros_map.end())
+  
+  bool has_def = macros_map.find(tok.str) != macros_map.end();
+  bool cond = ((has_def == true) && (kind == tok::IFDEF)) ||
+    ((has_def == false) && (kind == tok::IFNDEF));
+  
+  if (cond)
     {
       // token has be defined
       macro_levels.push (c_macro_level);
@@ -293,6 +385,14 @@ void Preprocess::direct_ifdef(void)
   eat_excess();
 }
 
+void Preprocess::direct_else(void)
+{
+  c_macro_level.status = !c_macro_level.status;
+}
+
+void Preprocess::direct_elif(void)
+{
+}
 int Preprocess::next(Token& tok)
 {
   for(;;)
@@ -303,18 +403,26 @@ int Preprocess::next(Token& tok)
         macros_buffer.pop_front();
         return tok.kind;
       }
+
     int t = lex.next(tok, fbuffer);
-    
-    if (t == tok::IFDEF)
-      {
-        direct_ifdef();
-        continue;
-      }
-    else if (t == tok::ENDIF)
-      {
-        direct_endif();
-        continue;
-      }
+    switch(t)
+    {
+    case tok::IFDEF:
+    case tok::IFNDEF:
+      direct_ifdef(t);
+      continue;
+    case tok::ENDIF:
+      direct_endif();
+      continue;
+    case tok::ELSE:
+      direct_else();
+      continue;
+    case tok::ELIF:
+      direct_elif();
+      continue;
+    default:
+      break;
+    }
     
     //if the token in undefined branch
     if (!c_macro_level.status)
@@ -339,6 +447,9 @@ int Preprocess::next(Token& tok)
         }
       else
         return t;
+      break;
+    case tok::LINE:
+      direct_line();
       break;
     case tok::COMMENT:
     case tok::SCOMMENT:
@@ -413,7 +524,7 @@ int Preprocess::parse_macro_arg(string& s)
       //replace ',' with ')'
       s += tok::tok_str[tok::RPAREN];
     }
-    else if ((t == tok::TEOF) || (t == tok::LINE))
+    else if ((t == tok::TEOF) || (t == tok::NEWLINE))
     {
       fatal_error("need macro arguments");
     }
@@ -507,7 +618,7 @@ void Preprocess::macro_expand_func(const Token& token)
     bool next_expand = true;
     while ((t = lex.next(tok, &buffer)) != tok::TEOF)
     {
-      if (t == tok::LINE)
+      if (t == tok::NEWLINE)
       {
         next_expand = false;
         continue;
@@ -653,7 +764,7 @@ void Preprocess::direct_def(void)
       
       while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
         {
-          if (t == tok::LINE)
+          if (t == tok::NEWLINE)
             break;
           vec.expand.push_back(tok);
         }
@@ -666,7 +777,7 @@ void Preprocess::direct_def(void)
 
       while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
         {
-          if (t == tok::LINE)
+          if (t == tok::NEWLINE)
             break;
           if (t != tok::SPACE)
             allspace = false;
@@ -677,10 +788,15 @@ void Preprocess::direct_def(void)
       if (allspace)
         vec.expand.push_back(Token(tok::NUMBER, one));
     }
+  else if (t == tok::NEWLINE)
+  {
+    string one("1");
+    vec.expand.push_back(Token(tok::NUMBER, one));
+  }
   else
-    {
-      fatal_error("parse define error");
-    }
+  {
+    fatal_error("parse define error");
+  }
 }
 
 void Preprocess::direct_inc(void)

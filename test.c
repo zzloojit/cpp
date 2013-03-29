@@ -1,8 +1,4 @@
-#ifdef "hello world"
-a
+#define a
+#ifdef a
+k
 #endif
-
-
-
-
-

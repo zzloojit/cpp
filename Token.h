@@ -39,10 +39,16 @@ namespace tok
   struct Token
   {
     int kind;
+    int line_num;
+    int column_num;
     std::string str;
-
+    std::string filename;
   Token(Kind k, std::string& s):kind(k), str(s)
-    {}
+    {
+      line_num = 0;
+      column_num = 0;
+      filename = "<built-in>";
+    }
   
     Token()
     {}
@@ -51,6 +57,9 @@ namespace tok
     {
       kind = tok.kind;
       str = tok.str;
+      line_num = tok.line_num;
+      column_num = tok.column_num;
+      filename = tok.filename;
     }
 
     Token& operator = (Token& t)
@@ -62,7 +71,7 @@ namespace tok
       
     std::string dump()
     {
-      return tok_desc[kind] + " " + str + "\n";
+      return tok_desc[kind] + str + "\n";
     }
   };
   

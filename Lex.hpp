@@ -27,6 +27,17 @@ using std::endl;
 
 using tok::Token;
 
+inline void warning(string s)
+{
+  cerr << s << endl;
+}
+
+inline void fatal_error(string s)
+{
+  cerr << s << endl;
+  exit(255);
+}
+
 class FileBuffer : public Buffer
 {
 public:
@@ -42,7 +53,7 @@ class Lex
 {
 public:
   Lex(string f);
-  int next(Token& tok, Buffer* fbuffer);
+  int next(Token& t, Buffer* fbuffer);
   ~Lex();
 private:
   void inc_direct(void);
@@ -76,10 +87,12 @@ public:
   void add_inc_path(string path);
   void add_sys_inc_path(string path);
   
+  void push_tok(Token&);
   void set_outfile(string file);
 private:
   void eat_excess(void);
   void direct_endif(void);
+  void direct_if(void);
   void direct_ifdef(int k);
   void direct_else(void);
   void direct_elif(void);

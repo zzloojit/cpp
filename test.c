@@ -1,4 +1,3 @@
-#define a
-#ifdef a
-k
+#if ~~~~~~~~~~1
+"failure"
 #endif

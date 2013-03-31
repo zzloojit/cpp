@@ -1,17 +1,10 @@
 #include "Lex.hpp"
 #include <cassert>
 
+#include "Expr.hpp"
+
 #define DEBUG
 
-void warning(string s)
-{
-  cerr << s << endl;
-}
-void fatal_error(string s)
-{
-  cerr << s << endl;
-  exit(255);
-}
 
 size_t getfilesize(int fd)
 {
@@ -69,6 +62,7 @@ Lex::Lex(string f)
   for (p = tok::patterns[0]; i < tok::totals - 1; ++i)
   {
     p += string("|") + tok::patterns[i];
+    //pattern = boost::regex(p, boost::regex::perl);
   }
   pattern = boost::regex(p, boost::regex::perl);
 }
@@ -86,6 +80,7 @@ int Lex::next(Token& t, Buffer* fbuffer)
   const char* &ptr_end = fbuffer->ptr_end;
   int& line_num = fbuffer->line_num;
   int& column_num = fbuffer->column_num;
+
   if (ptr == ptr_end)
   {
     t.kind = tok::TEOF;
@@ -114,6 +109,10 @@ int Lex::next(Token& t, Buffer* fbuffer)
                 + fbuffer->name);
   }
 
+  t.line_num = line_num;
+  t.filename = fbuffer->name;
+  t.column_num = column_num;
+
   if (t.kind == tok::TAB)
   {
     t.kind = tok::SPACE;
@@ -124,10 +123,6 @@ int Lex::next(Token& t, Buffer* fbuffer)
   {
     column_num += t.str.length(); 
   }
-  
-  t.line_num = line_num;
-  t.filename = fbuffer->name;
-  t.column_num = column_num;
 
   // count line number
   if (t.kind == tok::NEWLINE)
@@ -159,6 +154,11 @@ Preprocess::Preprocess(string f):lex(f),E_mode(false)
   c_macro_level.status = true;
   inc_set.insert(f);
   fbuffer = new FileBuffer(f);
+}
+
+void Preprocess::push_tok(Token& tok)
+{
+  macros_buffer.push_front(tok);
 }
 
 void Preprocess::set_outfile(string f)
@@ -393,6 +393,24 @@ void Preprocess::direct_else(void)
 void Preprocess::direct_elif(void)
 {
 }
+
+void Preprocess::direct_if(void)
+{
+  Expr e(*this);
+  int value = e.parse_expr();
+  if (value != 0)
+    {
+      macro_levels.push (c_macro_level);
+      c_macro_level.level += 1;
+    }
+  else
+    {
+      macro_levels.push (c_macro_level);
+      c_macro_level.level += 1;
+      c_macro_level.status = false;
+    }
+}
+
 int Preprocess::next(Token& tok)
 {
   for(;;)
@@ -411,6 +429,9 @@ int Preprocess::next(Token& tok)
     case tok::IFNDEF:
       direct_ifdef(t);
       continue;
+    case tok::IF:
+      direct_if();
+      continue;
     case tok::ENDIF:
       direct_endif();
       continue;
@@ -427,6 +448,7 @@ int Preprocess::next(Token& tok)
     //if the token in undefined branch
     if (!c_macro_level.status)
       continue;
+
     switch(t)
     {
     default:
@@ -455,6 +477,8 @@ int Preprocess::next(Token& tok)
     case tok::SCOMMENT:
       comment(t);
       break;
+    case tok::BSLASHC:
+      continue;
     case tok::TEOF:
       if (!buffers.empty())
       {

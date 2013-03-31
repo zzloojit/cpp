@@ -10,4 +10,4 @@ Buffer.o:Buffer.cpp Buffer.hpp
 	g++ Buffer.cpp -o Buffer.o -g -c
 
 clean:
-	rm Lex Buffer.o Expr.o
+	rm Lex Lex.o Buffer.o Expr.o

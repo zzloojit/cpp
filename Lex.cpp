@@ -113,6 +113,41 @@ int Lex::next(Token& t, Buffer* fbuffer)
   t.filename = fbuffer->name;
   t.column_num = column_num;
 
+  // is not begin line
+  if (column_num != 0)
+    {
+      if ((t.kind >= tok::INCLUDE) && (t.kind <= tok::LINE))
+        {
+          const char *p = strchr(ptr, '#');
+          assert(p);
+          size_t len = p - ptr;
+
+          if (len > 0)
+            {
+              t.kind = tok::SPACE;
+              t.str = string(ptr, len);
+              while (len)
+                {
+                  if (ptr[--len] == ' ')
+                    column_num++;
+                  else if (ptr[len] == '\t')
+                    column_num += 8;
+                  else
+                    assert(0);
+                }
+            }
+          else
+            {
+              t.kind = tok::SHARP;
+              t.str = string(ptr, 1);
+              column_num++;
+            }
+          t.column_num = column_num;
+          ptr += t.str.length();
+          return t.kind;
+        }
+    }
+
   if (t.kind == tok::TAB)
   {
     t.kind = tok::SPACE;
@@ -132,9 +167,12 @@ int Lex::next(Token& t, Buffer* fbuffer)
     }
 
   ptr += matchs[0].length();
-  
+
   if (ptr > ptr_end)
     fatal_error("unknown token");
+
+  if (t.kind == tok::BSLASHC) 
+    return next(t, fbuffer);
 
   return t.kind;
 }
@@ -392,6 +430,13 @@ void Preprocess::direct_else(void)
 
 void Preprocess::direct_elif(void)
 {
+  Expr e(*this);
+  int value = e.parse_expr();
+
+  if (c_macro_level.status == true)
+    c_macro_level.status = false;
+  else if (value != 0)
+    c_macro_level.status = true;
 }
 
 void Preprocess::direct_if(void)
@@ -410,6 +455,13 @@ void Preprocess::direct_if(void)
       c_macro_level.status = false;
     }
 }
+
+// void Preprocess::defined()
+// {
+//   int t;
+//   Token tok;
+  
+// }
 
 int Preprocess::next(Token& tok)
 {
@@ -466,9 +518,12 @@ int Preprocess::next(Token& tok)
       if (macros_map.find(tok.str) != macros_map.end())
         {
           macro_expand(tok);
+          continue;
         }
       else
-        return t;
+        {
+          return t;
+        }
       break;
     case tok::LINE:
       direct_line();
@@ -477,8 +532,6 @@ int Preprocess::next(Token& tok)
     case tok::SCOMMENT:
       comment(t);
       break;
-    case tok::BSLASHC:
-      continue;
     case tok::TEOF:
       if (!buffers.empty())
       {
@@ -672,15 +725,6 @@ void Preprocess::macro_expand(const Token& token)
   const string& s = token.str;
   macro_type& vec = macros_map[s];
   
-  // don't need expand
-  // if (avoid_recursion.find(s) != avoid_recursion.end())
-  // {
-  //   macros_buffer.push_back(token);
-  //   return;
-  // }
-
-
-  
   if (vec.kind == tok::macfunc_type)
   {
     macro_expand_func(token);
@@ -694,19 +738,8 @@ void Preprocess::macro_expand(const Token& token)
     for (std::vector<Token>::iterator i = vec.expand.begin(); i != vec.expand.end(); ++i)
     {
       Token tok = *i;
-      // convert preprocess token to c token
-      // maybe create two token table will be better
-      if (tok.kind == tok::INCLUDE)
-      {
-        tok.kind = tok::SHARP;
-        tok.str = tok::tok_str[tok::SHARP];
-        macros_buffer.push_back(tok);
 
-        tok.kind = tok::IDENT;
-        tok.str = "include";
-        macros_buffer.push_back(tok);
-      }
-      else if (macros_map.find(tok.str) == macros_map.end())
+      if (macros_map.find(tok.str) == macros_map.end()) // 
       {
         macros_buffer.push_back(tok);
       }

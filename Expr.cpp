@@ -188,6 +188,50 @@ inline void Expr::reduce(std::stack<int>& operators, std::stack<int>& operands)
   operands.push(value);
 }
 
+bool Expr::defined()
+{
+  int t;
+  Token tok;
+  bool seen = false;
+  bool has_def = false;
+  int lparen = 0;
+
+  while (t = pp.lex.next(tok, pp.fbuffer))
+    {
+      switch(t)
+        {
+        case tok::SPACE :
+          continue;
+
+        case tok::LPAREN :
+          if (seen == true)
+            fatal_error("defined need only one identifier");
+          lparen++;
+          break;
+
+        case tok::RPAREN :
+          if (seen == false)
+            fatal_error("defined need identifier");
+          lparen--;
+          break;
+
+        case tok::IDENT :
+          if (seen == true)
+            fatal_error("defined need only one identifier");
+          
+          seen = true;
+          if (pp.macros_map.find(tok.str) != pp.macros_map.end())
+            has_def = true;
+          else 
+            has_def = false;
+          break;
+        }
+      
+      if (seen && (lparen == 0))
+        return has_def;
+    }
+}
+
 int Expr::parse_expr()
 {
   bool want_value = true;
@@ -248,7 +292,7 @@ int Expr::parse_expr()
           operands.push(l);
           want_value = false;
         }
-      else if (t== tok::COLON)
+      else if (t == tok::COLON)
         {
           if (want_value == true)
             fatal_error("#if macro need operand");
@@ -262,6 +306,23 @@ int Expr::parse_expr()
             }
           want_value = true;
           operators.push(t);
+        }
+      else if (t == tok::IDENT)
+        {
+          if (want_value == false)
+            fatal_error("if macro need operantor");
+
+          want_value = false;
+
+          if (tok.str == "defined")
+            {
+              bool has_def = defined();
+              operands.push(has_def ? 1 : 0);
+            }
+          else
+            {
+              fatal_error("is not valid preprocess expression");
+            }
         }
       else
         {
@@ -279,20 +340,7 @@ int Expr::parse_expr()
                   continue;
                 }
             }
-          //unary operator
-          // switch(t)
-          //   {
-          //   case tok::SUB:
-          //   case tok::PLUS:
-          //   case tok::BANG:
-          //   case tok::COMPL:
-          //     prev = t;
-          //   default:
-          //     break;
-          //   }
-          // if (prev == -1)
-          //   continue;
-          // 
+
           int prec = op_map[t];
           
           if (prec <= op_map[operators.top()])

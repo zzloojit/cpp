@@ -1,3 +1,4 @@
-#if ~~~~~~~~~~1
-"failure"
+#define a
+#if  defined a
+q #include
 #endif

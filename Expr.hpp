@@ -11,5 +11,6 @@ public:
 private:
   Preprocess& pp;
   void reduce(std::stack<int>& operators, std::stack<int>& operands);
+  bool defined(void);
 };
 #endif

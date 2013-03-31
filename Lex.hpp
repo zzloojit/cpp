@@ -89,6 +89,7 @@ public:
   
   void push_tok(Token&);
   void set_outfile(string file);
+  friend class Expr;
 private:
   void eat_excess(void);
   void direct_endif(void);

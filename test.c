@@ -1,3 +1,3 @@
-#if "hello world"
-q #include
-#endif
+#define STR(x)   # x
+
+STR("hello world")

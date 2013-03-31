@@ -653,23 +653,44 @@ void Preprocess::macro_expand_func(const Token& token)
     }
     
     string expands;
+    std::deque<string> dq;
+    
     avoid_recursion.insert(token.str);
     for(std::vector<Token>::iterator i = vec.expand.begin(); 
         i != vec.expand.end(); ++i)
     {
+      // tok follow '\n' don't expand
       if (avoid_recursion.find(i->str) != avoid_recursion.end())
-          expands += "\n";
+        dq.push_back("\n");//expands += "\n";
 
       if ((pa_map.find(i->str) != pa_map.end()))
       {
-        expands += pa_map[i->str];
+        dq.push_back(pa_map[i->str]);
+        //expands += pa_map[i->str];
       }
       else
       {
-        expands += i->str;
+        if (i->str == "##")
+          {
+            string p = dq.back(); dq.pop_back();
+            string n = (++i)->str;
+            dq.push_back(p + n);
+          }
+        
+        if (i->str == "#")
+          {
+            string n = "\"" + (++i)->str + "\"";
+            dq.push_back(n);
+          }
+        //expands += i->str;
       }
     }
 
+    while (!dq.empty())
+      {
+        expands += dq.front();
+        dq.pop_front();
+      }
     
     Buffer buffer;
     buffer.name = fbuffer->name;
@@ -757,6 +778,27 @@ void Preprocess::direct_undef(void)
   macros_map.erase(tok.str);
 }
 
+bool in_vector(std::vector<Token>& vec, Token& tok)
+{
+  for (std::vector<Token>::iterator i = vec.begin(); i != vec.end(); ++i)
+    if (i->str == tok.str)
+      return true;
+  return false;
+}
+
+void reduce_adjacent_twosharp(std::vector<Token>& vec)
+{
+  int i = 0;
+  
+  if (vec.size() < 2)
+    return ;
+  for (std::vector<Token>::iterator i = vec.begin(); (i + 1) != vec.end(); ++i)
+    {
+      if ((i->kind == tok::TWOSHARP) && (i->kind == (i + 1)->kind))
+        vec.erase(i);
+    }
+}
+
 void Preprocess::direct_def(void)
 {
   Token tok;
@@ -768,7 +810,7 @@ void Preprocess::direct_def(void)
   
   if (t != tok::IDENT)
     {
-      fatal_error("define need identifier");
+      fatal_error("macro name define need identifier");
     }
   
   string n(tok.str);
@@ -802,18 +844,48 @@ void Preprocess::direct_def(void)
             break;
           else
            {
-             fatal_error(tok::tok_str[t] + 
-                         " can not appear macro parameter list");
+             fatal_error(tok.str + " may not appear in macro parameter list");
            }
         }
       }
       
+      
+      
+      bool seen_sharp = false;
       while ((t = lex.next(tok, fbuffer)) != tok::TEOF)
         {
           if (t == tok::NEWLINE)
             break;
+
+          if (t == tok::SHARP)
+            {
+              vec.expand.push_back(tok);
+
+              do {
+                t = lex.next(tok, fbuffer);
+              }while (t == tok::SPACE);
+              
+              if (!in_vector(vec.params, tok))
+                fatal_error("# is not followed by a macro parameter");
+            }
+          
+          if (t = tok::TWOSHARP)
+            {
+              while (!vec.expand.empty() && (vec.expand.back().kind == tok::SPACE))
+                vec.expand.pop_back();
+            }
+          
           vec.expand.push_back(tok);
         }
+
+      while (!vec.expand.empty() && (vec.expand.back().kind == tok::SPACE))
+        vec.expand.pop_back();
+
+      if (!vec.expand.empty() && ((vec.expand.front().kind == tok::TWOSHARP)
+                                  ||(vec.expand.back().kind == tok::TWOSHARP)))
+        fatal_error("'##' cannot appear at either end of a macro expansion");
+      
+      reduce_adjacent_twosharp(vec.expand);
     }
   else if (t == tok::SPACE)
     {
@@ -825,8 +897,10 @@ void Preprocess::direct_def(void)
         {
           if (t == tok::NEWLINE)
             break;
+ 
           if (t != tok::SPACE)
             allspace = false;
+          
           vec.expand.push_back(tok);
         }
       

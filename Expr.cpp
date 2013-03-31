@@ -328,8 +328,8 @@ int Expr::parse_expr()
         {
           if(op_map.find(t) == op_map.end())
             {
-              fatal_error("\"" + tok.str + "\"" + "is not valid"
-                          "in preprocess expression");
+              fatal_error("token: " + tok.str + "is not valid"
+                          " in preprocess expression");
             }
 
           if (want_value == true)
@@ -345,9 +345,6 @@ int Expr::parse_expr()
           
           if (prec <= op_map[operators.top()])
             {
-              int v = operators.top();
-              int s= operators.size();
-              int p = op_map[v];
               reduce(operators, operands);
             }
           operators.push(t);

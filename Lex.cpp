@@ -13,6 +13,12 @@ size_t getfilesize(int fd)
   return s.st_size;
 }
 
+void Preprocess::fatal_error(string s)
+{
+  cerr << fbuffer->name << ":" << fbuffer->line_num
+       << ":" << fbuffer->column_num << "  " << s << endl;
+}
+
 void Preprocess::except(int k)
 {
   Token tok;
@@ -633,23 +639,6 @@ void Preprocess::macro_expand_func(const Token& token)
   else if (t == tok::LPAREN)
   {
     std::vector<string> argus;
-    // string a;
-    // int k;
-
-    // while (k = parse_macro_arg(a))
-    // {
-    //   assert((k == tok::COMMA) || (k == tok::RPAREN));
-      
-    //   if ((k == tok::COMMA) && (a == ""))
-    //     fatal_error("macro need arguments");
-    //   if ((k == tok::RPAREN) && (a == ""))
-    //     break;
-      
-    //   argus.push_back(a);
-    //   a = "";
-    //   if (k == tok::RPAREN)
-    //     break;
-    // }
 
     parse_arguments(argus);
     if (argus.size() != vec.params.size())

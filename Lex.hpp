@@ -91,6 +91,7 @@ public:
   void set_outfile(string file);
   friend class Expr;
 private:
+  void fatal_error(string s);
   void eat_excess(void);
   void direct_endif(void);
   void direct_if(void);

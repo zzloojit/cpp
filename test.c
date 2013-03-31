@@ -1,4 +1,3 @@
-#define a
-#if  defined a
+#if "hello world"
 q #include
 #endif
